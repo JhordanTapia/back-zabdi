@@ -1,10 +1,15 @@
+import os
 import pandas as pd
 from google import genai
 import json
 import openpyxl
+from dotenv import load_dotenv  # <-- 1. Importar dotenv
 
-# 1. Configura tu llave (Pon la tuya aquí adentro)
-API_KEY ="holaaaaaaaaaa"
+# Cargar las variables del .env
+load_dotenv()  # <-- 2. Inicializar la carga
+
+# 1. Configura tu llave leyendo desde el .env
+API_KEY = os.getenv("GEMINI_API_KEY")  # <-- 3. Leer la variable segura
 cliente = genai.Client(api_key=API_KEY)
 
 

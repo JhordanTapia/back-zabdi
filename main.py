@@ -19,22 +19,25 @@ import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.drawing.image import Image as ExcelImage
 from pydantic import BaseModel
+from dotenv import load_dotenv  # <-- 1. Importar la librería
+
+
+load_dotenv()
 
 Base.metadata.create_all(bind=engine)
-
 app = FastAPI(title="API Presupuestos Navales")
 
 # --- CONFIGURACIÓN CORS ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # El asterisco deja pasar a todos (perfecto para desarrollo con Angular)
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # --- CONFIGURACIÓN JWT ---
-SECRET_KEY = "tu_clave_super_secreta_xd"  # En producción esto va en un archivo .env
+SECRET_KEY = os.getenv("SECRET_KEY")  # <-- 3. Leer desde el .env
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 1440  # 24 horas (1 día)
 
@@ -527,8 +530,8 @@ def consultar_ruc_sunat(
     if len(ruc) != 11:
         raise HTTPException(status_code=400, detail="El RUC debe tener 11 dígitos")
 
-    # TU LLAVE MAESTRA DE DECOLECTA
-    TOKEN_DECOLECTA = "sk_16589.azFNkJOCPNh4trLFB6bT1kvyvwh4MUlD"
+    # Leer el token de forma segura desde las variables de entorno
+    TOKEN_DECOLECTA = os.getenv("TOKEN_DECOLECTA")  # <-- 4. Leer desde el .env
 
     url = f"https://api.decolecta.com/v1/sunat/ruc?numero={ruc}"
 

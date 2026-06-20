@@ -1,15 +1,19 @@
+import os
+from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-# Cambia 'tu_contraseña' por tu clave real
-SQLALCHEMY_DATABASE_URL = "postgresql+psycopg2://postgres:1234@localhost:5432/presupuestos_navales_db"
+# Cargar variables de entorno
+load_dotenv()
+
+# Leer la URL desde el .env
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
 
-# Esto inyecta la conexión en cada petición
 def get_db():
     db = SessionLocal()
     try:

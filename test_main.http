@@ -1,0 +1,12 @@
+### 1. LOGIN (Dale Play aquí primero para sacar el token)
+POST http://127.0.0.1:8000/api/login
+Content-Type: application/json
+
+{
+  "email": "prueba_http@astillero.com",
+  "password": "123"
+}
+
+### 2. ZONA VIP (Pega el token abajo y dale Play)
+GET http://127.0.0.1:8000/api/protegido
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwNmUwYTQ1OC1jOGExLTQwZWEtOTYxYS01MjQ5NWNmNzJmZjYiLCJlbWFpbCI6InBydWViYV9odHRwQGFzdGlsbGVyby5jb20iLCJleHAiOjE3ODE2NDQ4MTR9.ijgCbjTrxHoiU9jf12yopHxgVgMvMhziAKFwq_OsDd0

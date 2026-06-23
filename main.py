@@ -218,6 +218,14 @@ async def analizar_excel_ia(
 
         os.remove(ruta_temp)
 
+        # 1. Capturamos si la IA devolvió la bandera de alto tráfico
+        if isinstance(datos_ia, dict) and datos_ia.get("error_ia_trafico"):
+            raise HTTPException(
+                status_code=429,
+                detail="Los servidores de IA están experimentando alto tráfico. Por favor, espera unos segundos y vuelve a intentarlo."
+            )
+
+        # 2. Capturamos errores generales si viene vacío
         if not datos_ia:
             raise HTTPException(status_code=500, detail="La IA falló al extraer los datos.")
 
@@ -227,9 +235,30 @@ async def analizar_excel_ia(
             "data": datos_ia  # Mandamos el JSON al frontend para que lo vea en el Modal
         }
 
+
+
+    except HTTPException as http_exc:
+
+        # Si el error es nuestro querido 429 de tráfico (u otro error HTTP controlado),
+
+        # lo dejamos pasar limpio hacia Angular sin convertirlo en 500.
+
+        raise http_exc
+
+
     except Exception as e:
-        if os.path.exists(ruta_temp):
-            os.remove(ruta_temp)
+
+        # Para cualquier otra falla, intentamos borrar la basura y lanzamos el 500
+
+        try:
+
+            if os.path.exists(ruta_temp):
+                os.remove(ruta_temp)
+
+        except Exception:
+
+            pass
+
         raise HTTPException(status_code=500, detail=f"Error analizando el documento: {str(e)}")
 
 

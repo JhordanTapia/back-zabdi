@@ -8,23 +8,27 @@ from dotenv import load_dotenv  # <-- 1. Importar dotenv
 # Cargar las variables del .env
 load_dotenv()  # <-- 2. Inicializar la carga
 
-# 1. Configura tu llave leyendo desde el .env
+# 1. Configura tu llave leyendo desde él .env
 API_KEY = os.getenv("GEMINI_API_KEY")  # <-- 3. Leer la variable segura
 cliente = genai.Client(api_key=API_KEY)
 
 
 # Fíjate que ahora recibe "moneda_indicada"
+# Fíjate que ahora recibe "moneda_indicada"
 def obtener_datos_json(ruta_archivo, moneda_indicada):
     print(f"1. Leyendo y aplastando el Excel: {ruta_archivo}...")
 
     try:
-        # Abrimos el Excel normal
+        # Abrimos el Excel normal y extraemos su contenido de forma segura
         wb = openpyxl.load_workbook(ruta_archivo, data_only=True)
         ws = wb.active
 
         data = ws.values
         df = pd.DataFrame(data)
         texto_crudo = df.to_csv(index=False, header=False, sep='\t')
+
+        # ¡FUNDAMENTAL EN WINDOWS! Cerrar el archivo para que el sistema lo suelte
+        wb.close()
 
         print("2. Enviando datos a Gemini 2.5 para extracción...\n")
 
@@ -120,17 +124,24 @@ def obtener_datos_json(ruta_archivo, moneda_indicada):
                 f"ALERTA DE CUADRE: Hay una diferencia de {diferencia:,.2f} en el archivo. ¡Revisar fórmulas de Excel!")
 
         # Opcional: Mostrar el JSON completo si quieres verlo
-        print("\nJSON COMPLETO PARA LA BASE DE DATOS:")
-        print(json.dumps(datos_limpios, indent=4, ensure_ascii=False))
+        # Silenciamos este print porque la consola de Windows suele explotar (UnicodeEncodeError)
+        # al intentar imprimir tildes o eñes (ensure_ascii=False).
+        # print("\nJSON COMPLETO PARA LA BASE DE DATOS:")
+        # print(json.dumps(datos_limpios, indent=4, ensure_ascii=False))
 
-        # ---> ESTA ES LA LÍNEA MÁGICA QUE TE FALTA <---
+        # El retorno se coloca aquí afuera para garantizar que Angular reciba la data extraída siempre
         return datos_limpios
-
     except Exception as e:
-        print(f"Error en la Matrix: {e}")
+        error_msg = str(e).lower()
+        print(f"Error en la Matrix: {error_msg}")
+
+        # Detectamos si el error de Google es por saturación o límites de cuota
+        if "429" in error_msg or "quota" in error_msg or "exhausted" in error_msg or "503" in error_msg or "overloaded" in error_msg:
+            return {"error_ia_trafico": True}
+
         return None
 
 
 if __name__ == "__main__":
     mi_archivo = "COTIZACION GAVILAN  13 ABRIL.xlsx"
-    obtener_datos_json(mi_archivo)
+    obtener_datos_json(mi_archivo, "PEN")

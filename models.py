@@ -90,6 +90,7 @@ class Presupuesto(Base):
 
     moneda = Column(String(3), default='PEN')
     url_pdf_storage = Column(Text)
+    notas = Column(Text, nullable=True)  # <--- NUEVO CAMPO AÑADIDO
     creado_por = Column(UUID(as_uuid=True), ForeignKey("perfiles.id"))
     creado_en = Column(DateTime(timezone=True), server_default=func.now())
     actualizado_en = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -112,10 +113,7 @@ class ItemPresupuesto(Base):
     cantidad = Column(Numeric(10, 2), nullable=False, default=1.00)
     precio_unitario = Column(Numeric(12, 2), nullable=False, default=0.00)
     horas_hombre = Column(Numeric(8, 2), default=0.00)
-
-    # OJO: No mapeamos 'subtotal' como una columna normal para insertar,
-    # porque en tu SQL dice "GENERATED ALWAYS AS (cantidad * precio_unitario) STORED"
-    # PostgreSQL lo calcula solo, si Python intenta meterle un dato, la BD explota.
+    notas = Column(Text, nullable=True)  # <--- NUEVA COLUMNA EN EL DETALLE
 
     creado_en = Column(DateTime(timezone=True), server_default=func.now())
 

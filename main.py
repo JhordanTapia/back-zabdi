@@ -20,6 +20,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.drawing.image import Image as ExcelImage
 from pydantic import BaseModel
 from dotenv import load_dotenv  # <-- 1. Importar la librería
+from typing import Optional
 
 
 load_dotenv()
@@ -64,6 +65,7 @@ class ItemEditado(BaseModel):
     detalle_actividad: str
     cantidad: float
     precio_unitario: float
+    notas: str | None = None # <--- AÑADIDO
 
 
 class PresupuestoGuardarRequest(BaseModel):
@@ -72,19 +74,20 @@ class PresupuestoGuardarRequest(BaseModel):
     numero_cotizacion: str | None = None
     fecha: str | None = None
     moneda: str = "PEN"  # <--- MAGIA MULTIMONEDA
+    notas: str | None = None # <--- AÑADIDO
     items: list[ItemEditado]
     password_confirmacion: str
-
 
 class ItemActualizar(BaseModel):
     id: int | None = None
     descripcion_original: str
     cantidad: float
     precio_unitario: float
-
+    notas: str | None = None # <--- AÑADIDO
 
 class PresupuestoActualizar(BaseModel):
     nro_cotizacion: str | None = None
+    notas: str | None = None # <--- AÑADIDO
     items: list[ItemActualizar]
 
 
@@ -311,11 +314,12 @@ def listar_presupuestos(
             resultado.append({
                 "id": p.id,
                 "numero_cotizacion": p.nro_presupuesto,
-                "astillero": nombre_astillero,  # <--- NUEVA LÍNEA
+                "astillero": nombre_astillero,
                 "embarcacion": p.proyecto_embarcacion,
                 "fecha": p.fecha_emision.strftime("%Y-%m-%d") if p.fecha_emision else "Sin fecha",
                 "estado": nombre_estado,
-                "moneda": p.moneda if p.moneda else "PEN"
+                "moneda": p.moneda if p.moneda else "PEN",
+                "notas": p.notas  # <--- ENVIAMOS LA NOTA A ANGULAR PARA EL MODAL "VER"
             })
 
         return {"status": "success", "data": resultado}
@@ -348,7 +352,8 @@ def obtener_detalle_presupuesto(
                 "descripcion": item.descripcion_original,
                 "cantidad": float(item.cantidad),
                 "precio_unitario": float(item.precio_unitario),
-                "subtotal": subtotal
+                "subtotal": subtotal,
+                "notas": item.notas  # <--- ENVIAMOS LAS NOTAS DEL ÍTEM A ANGULAR
             })
 
         return {
@@ -382,6 +387,7 @@ def actualizar_presupuesto(
             raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
 
         presupuesto_db.nro_presupuesto = request.nro_cotizacion
+        presupuesto_db.notas = request.notas
 
         # 2. Capturamos los IDs de los ítems que sobrevivieron en el frontend (que SÍ tienen ID)
         ids_recibidos = [item.id for item in request.items if item.id is not None]
@@ -405,13 +411,15 @@ def actualizar_presupuesto(
                     item_db.descripcion_original = item_req.descripcion_original
                     item_db.cantidad = item_req.cantidad
                     item_db.precio_unitario = item_req.precio_unitario
+                    item_db.notas = item_req.notas  # <--- ACTUALIZA LA NOTA DEL ÍTEM
             else:
                 # Si NO tiene ID, es una fila nueva que añadieron en el modal
                 nuevo_item = ItemPresupuesto(
                     id_presupuesto=id_presupuesto,
                     descripcion_original=item_req.descripcion_original,
                     cantidad=item_req.cantidad,
-                    precio_unitario=item_req.precio_unitario
+                    precio_unitario=item_req.precio_unitario,
+                    notas=item_req.notas  # <--- GUARDA LA NOTA DEL ÍTEM NUEVO
                 )
                 db.add(nuevo_item)
 
@@ -457,6 +465,7 @@ class PresupuestoCrearManual(BaseModel):
     embarcacion: str
     numero_cotizacion: str | None = None
     moneda: str = "PEN"
+    notas: str | None = None # <--- AÑADIDO
     items: list[ItemEditado]
 
 
@@ -497,11 +506,12 @@ def crear_presupuesto_manual(
         # 2. CREAR CABECERA (Estado 1 = Borrador)
         nuevo_presupuesto = Presupuesto(
             creado_por=usuario_actual.id,
-            id_proveedor=proveedor_id,  # <--- AQUÍ ESTÁ EL CAMBIO CLAVE
+            id_proveedor=proveedor_id,
             proyecto_embarcacion=request.embarcacion,
             nro_presupuesto=request.numero_cotizacion,
             fecha_emision=datetime.now().date(),
             moneda=request.moneda,
+            notas=request.notas,  # <--- GUARDAMOS LA NOTA NUEVA EN LA BD
             id_estado=1
         )
         db.add(nuevo_presupuesto)
@@ -513,7 +523,8 @@ def crear_presupuesto_manual(
                 id_presupuesto=nuevo_presupuesto.id,
                 descripcion_original=req_item.detalle_actividad,
                 cantidad=req_item.cantidad,
-                precio_unitario=req_item.precio_unitario
+                precio_unitario=req_item.precio_unitario,
+                notas=req_item.notas  # <--- GUARDA LA NOTA EN CREACIÓN MANUAL
             )
             db.add(nuevo_item)
 
@@ -645,6 +656,12 @@ def exportar_excel(
 ):
     try:
         from models import ItemPresupuesto
+        import io
+        import os
+        import openpyxl
+        from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+        from openpyxl.drawing.image import Image as ExcelImage
+        from fastapi.responses import StreamingResponse
 
         presupuesto = db.query(Presupuesto).filter(Presupuesto.id == id_presupuesto).first()
         if not presupuesto:
@@ -652,134 +669,111 @@ def exportar_excel(
 
         items = db.query(ItemPresupuesto).filter(ItemPresupuesto.id_presupuesto == id_presupuesto).all()
 
-        # --- 0. CONFIGURACIÓN DE LA MONEDA Y BORDES ---
-        moneda_db = presupuesto.moneda if presupuesto.moneda else "PEN"
-        if moneda_db == 'USD':
-            formato_moneda = '"$" #,##0.00'
-        elif moneda_db == 'EUR':
-            formato_moneda = '"€" #,##0.00'
-        else:
-            formato_moneda = '"S/" #,##0.00'  # PEN por defecto
+        # Configuración de moneda segura
+        moneda_db = presupuesto.moneda if getattr(presupuesto, 'moneda', None) else "PEN"
+        formato_moneda = '"$" #,##0.00' if moneda_db == 'USD' else (
+            '"€" #,##0.00' if moneda_db == 'EUR' else '"S/" #,##0.00')
 
-        borde_fino = Border(
-            left=Side(style='thin'),
-            right=Side(style='thin'),
-            top=Side(style='thin'),
-            bottom=Side(style='thin')
-        )
-
-        # --- 1. CÁLCULOS MATEMÁTICOS MILIMÉTRICOS ---
-        max_desc_len = max([len(str(item.descripcion_original)) for item in items] + [45]) if items else 45
-        ancho_columna_b = max(45, min(int(max_desc_len * 1.2), 120))
-
-        # Suma de las 5 columnas
-        ancho_total_unidades = 14 + ancho_columna_b + 10 + 15 + 15
-
-        # Fórmula nativa de Microsoft Excel para convertir unidades de columna a píxeles exactos de imagen
-        # (7 píxeles por unidad de ancho) + (5 píxeles de margen extra por cada una de las 5 columnas)
-        ancho_logo_pixeles = int((ancho_total_unidades * 7) + 25)
+        borde_fino = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'),
+                            bottom=Side(style='thin'))
 
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = f"Cotizacion_{presupuesto.nro_presupuesto or 'SN'}"
 
-        # --- 2. INCRUSTAR LOGO EMPRESARIAL ADAPTATIVO ---
+        # Cálculo de anchos
+        max_desc_len = max([len(str(item.descripcion_original or "")) for item in items] + [45]) if items else 45
+        ancho_columna_b = max(45, min(int(max_desc_len * 1.2), 120))
+
+        # Logo
         ruta_logo = "logo.png"
         if os.path.exists(ruta_logo):
             img = ExcelImage(ruta_logo)
-            img.width = ancho_logo_pixeles  # <--- Adaptación perfecta
+            img.width = int((14 + ancho_columna_b + 40) * 7 + 25)
             img.height = 130
             ws.add_image(img, "A1")
 
-        # --- 3. METADATOS DEL PRESUPUESTO ---
         ws["A8"] = "Embarcación:"
         ws["A8"].font = Font(bold=True)
-        ws["B8"] = presupuesto.proyecto_embarcacion
+        ws["B8"] = getattr(presupuesto, 'proyecto_embarcacion', 'Sin especificar')
 
         ws["A9"] = "Fecha:"
         ws["A9"].font = Font(bold=True)
-        ws["B9"] = presupuesto.fecha_emision.strftime("%Y-%m-%d") if presupuesto.fecha_emision else "Sin fecha"
+        ws["B9"] = presupuesto.fecha_emision.strftime("%Y-%m-%d") if getattr(presupuesto, 'fecha_emision',
+                                                                             None) else "Sin fecha"
 
-        # --- 4. CONSTRUCCIÓN DE LA TABLA DE ÍTEMS ---
         fila_inicio_tabla = 11
-        cabeceras = ["Ítem", "Descripción del Trabajo", "Cant.", "P. Unitario", "Subtotal"]
 
+        # NOTA GENERAL (Protegida)
+        nota_general = getattr(presupuesto, 'notas', None)
+        if nota_general and str(nota_general).strip():
+            ws[f"A{fila_inicio_tabla}"] = "Notas:"
+            ws[f"A{fila_inicio_tabla}"].font = Font(bold=True, color="FFFF8C00")
+            ws[f"B{fila_inicio_tabla}"] = str(nota_general)
+            fila_inicio_tabla += 2
+
+        cabeceras = ["Ítem", "Descripción del Trabajo", "Cant.", "P. Unitario", "Subtotal"]
         for col_num, cabecera in enumerate(cabeceras, 1):
             celda = ws.cell(row=fila_inicio_tabla, column=col_num, value=cabecera)
-            celda.font = Font(bold=True, color="FFFFFF")
-            celda.fill = PatternFill(start_color="0F172A", end_color="0F172A", fill_type="solid")
+            celda.font = Font(bold=True, color="FFFFFFFF")
+            celda.fill = PatternFill(start_color="000F172A", end_color="000F172A", fill_type="solid")
             celda.alignment = Alignment(horizontal="center" if col_num != 2 else "left")
             celda.border = borde_fino
 
-        # Llenamos la tabla
         fila_actual = fila_inicio_tabla + 1
         subtotal_general = 0.0
 
         for idx, item in enumerate(items, 1):
-            c_idx = ws.cell(row=fila_actual, column=1, value=idx)
-            c_idx.alignment = Alignment(horizontal="center", vertical="center")
-            c_idx.border = borde_fino
+            ws.cell(row=fila_actual, column=1, value=idx).border = borde_fino
 
-            c_desc = ws.cell(row=fila_actual, column=2, value=item.descripcion_original)
+            # NOTA DEL ÍTEM (Protegida)
+            texto_desc = str(getattr(item, 'descripcion_original', ''))
+            nota_item = getattr(item, 'notas', None)
+            if nota_item and str(nota_item).strip():
+                texto_desc += f"\n[Obs: {str(nota_item)}]"
+
+            c_desc = ws.cell(row=fila_actual, column=2, value=texto_desc)
             c_desc.alignment = Alignment(wrap_text=True, vertical="center")
             c_desc.border = borde_fino
 
-            c_cant = ws.cell(row=fila_actual, column=3, value=float(item.cantidad))
-            c_cant.alignment = Alignment(horizontal="center", vertical="center")
-            c_cant.border = borde_fino
+            cant = float(getattr(item, 'cantidad', 0.0) or 0.0)
+            precio = float(getattr(item, 'precio_unitario', 0.0) or 0.0)
 
-            c_precio = ws.cell(row=fila_actual, column=4, value=float(item.precio_unitario))
+            ws.cell(row=fila_actual, column=3, value=cant).border = borde_fino
+            c_precio = ws.cell(row=fila_actual, column=4, value=precio)
             c_precio.number_format = formato_moneda
-            c_precio.alignment = Alignment(vertical="center")
             c_precio.border = borde_fino
 
-            subtotal_item = float(item.cantidad) * float(item.precio_unitario)
-            c_sub = ws.cell(row=fila_actual, column=5, value=subtotal_item)
+            sub_item = cant * precio
+            c_sub = ws.cell(row=fila_actual, column=5, value=sub_item)
             c_sub.number_format = formato_moneda
-            c_sub.alignment = Alignment(vertical="center")
             c_sub.border = borde_fino
 
-            subtotal_general += subtotal_item
+            subtotal_general += sub_item
             fila_actual += 1
 
-        # --- 5. CÁLCULO DE IMPUESTOS (SIN BORDES) ---
+        # Totales
         igv = subtotal_general * 0.18
-        total_general = subtotal_general + igv
+        ws.cell(row=fila_actual + 1, column=4, value="SUBTOTAL:").font = Font(bold=True)
+        ws.cell(row=fila_actual + 1, column=5, value=subtotal_general).number_format = formato_moneda
 
-        fila_subtotal = fila_actual + 1
-        ws.cell(row=fila_subtotal, column=4, value="SUBTOTAL:").font = Font(bold=True)
-        celda_sub = ws.cell(row=fila_subtotal, column=5, value=subtotal_general)
-        celda_sub.number_format = formato_moneda
+        ws.cell(row=fila_actual + 2, column=4, value="IGV (18%):").font = Font(bold=True)
+        ws.cell(row=fila_actual + 2, column=5, value=igv).number_format = formato_moneda
 
-        fila_igv = fila_actual + 2
-        ws.cell(row=fila_igv, column=4, value="IGV (18%):").font = Font(bold=True)
-        celda_igv = ws.cell(row=fila_igv, column=5, value=igv)
-        celda_igv.number_format = formato_moneda
-
-        fila_total = fila_actual + 3
-        ws.cell(row=fila_total, column=4, value="TOTAL GENERAL:").font = Font(bold=True)
-        celda_total = ws.cell(row=fila_total, column=5, value=total_general)
-        celda_total.font = Font(bold=True, color="0F172A")
-        celda_total.number_format = formato_moneda
-
-        # --- 6. DIMENSIONAMIENTO DINÁMICO DE COLUMNAS ---
-        ws.column_dimensions['A'].width = 14
-        ws.column_dimensions['B'].width = ancho_columna_b
-        ws.column_dimensions['C'].width = 10
-        ws.column_dimensions['D'].width = 15
-        ws.column_dimensions['E'].width = 15
+        ws.cell(row=fila_actual + 3, column=4, value="TOTAL:").font = Font(bold=True)
+        ws.cell(row=fila_actual + 3, column=5, value=subtotal_general + igv).number_format = formato_moneda
 
         stream = io.BytesIO()
         wb.save(stream)
         stream.seek(0)
 
-        nombre_archivo = f"Cotizacion_{presupuesto.nro_presupuesto or id_presupuesto}.xlsx"
-
         return StreamingResponse(
             stream,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": f"attachment; filename={nombre_archivo}"}
+            headers={"Content-Disposition": f"attachment; filename=Cotizacion_{id_presupuesto}.xlsx"}
         )
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al generar el Excel dinámico: {str(e)}")
+        import traceback
+        traceback.print_exc()  # Esto mostrará el error REAL en tu consola de PyCharm
+        raise HTTPException(status_code=500, detail=f"Error en servidor: {str(e)}")

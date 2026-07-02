@@ -33,41 +33,43 @@ def obtener_datos_json(ruta_archivo, moneda_indicada):
         print("2. Enviando datos a Gemini 2.5 para extracción...\n")
 
         prompt = f"""
-        Eres un sistema avanzado de extracción y auditoría para un astillero naval.
-        Analiza el siguiente texto en crudo de una cotización y devuelve UNICAMENTE un JSON.
+                Eres un sistema avanzado de extracción y auditoría para un astillero naval.
+                Analiza el siguiente texto en crudo de una cotización y devuelve UNICAMENTE un JSON.
 
-        Estructura obligatoria:
-        {{
-            "cliente": "Nombre del cliente o empresa",
-            "puerto": "Lugar o puerto del trabajo",
-            "actividad": "Tipo de actividad (ej: CALDERERIA)",
-            "embarcacion": "Nombre del barco",
-            "numero_cotizacion": "Número si existe",
-            "fecha": "Fecha del documento",
-            "moneda": "{moneda_indicada}", 
-            "subtotal_excel": 0.0,
-            "igv_excel": 0.0,
-            "total_excel": 0.0,
-            "items": [
+                Estructura obligatoria:
                 {{
-                    "detalle_actividad": "Descripción",
-                    "cantidad": 0.0,
-                    "precio_unitario": 0.0,
-                    "total_item": 0.0
+                    "cliente": "Nombre del cliente o empresa",
+                    "puerto": "Lugar o puerto del trabajo",
+                    "actividad": "Tipo de actividad (ej: CALDERERIA)",
+                    "embarcacion": "Nombre del barco",
+                    "numero_cotizacion": "Número si existe",
+                    "fecha": "Fecha del documento",
+                    "moneda": "{moneda_indicada}", 
+                    "notas": "Condiciones comerciales, viáticos o imprevistos a nivel general",
+                    "subtotal_excel": 0.0,
+                    "igv_excel": 0.0,
+                    "total_excel": 0.0,
+                    "items": [
+                        {{
+                            "detalle_actividad": "Descripción",
+                            "cantidad": 0.0,
+                            "precio_unitario": 0.0,
+                            "total_item": 0.0,
+                            "notas": "Notas especificas de esta fila (dejar vacio si no hay)"
+                        }}
+                    ]
                 }}
-            ]
-        }}
 
-        Reglas:
-        - subtotal_excel, igv_excel y total_excel deben ser los montos finales declarados al final del documento.
-        - Los ítems deben ser SOLO los trabajos, ignora filas de totales.
-        - Todo monto económico debe ser float.
-        - REGLA ABSOLUTA DE MONEDA: El usuario ya confirmó que este documento está en {moneda_indicada}. EL CAMPO "moneda" DEL JSON DEBE SER ESTRICTAMENTE "{moneda_indicada}". PROHIBIDO ADIVINAR OTRA MONEDA.
-        - PROHIBIDO USAR TRAILING COMMAS: El JSON debe ser 100% válido y estricto. NO agregues una coma al final del último elemento de una lista o diccionario.
+                Reglas:
+                - subtotal_excel, igv_excel y total_excel deben ser los montos finales declarados al final del documento.
+                - Los ítems deben ser SOLO los trabajos, ignora filas de totales.
+                - Todo monto económico debe ser float.
+                - REGLA ABSOLUTA DE MONEDA: El usuario ya confirmó que este documento está en {moneda_indicada}. EL CAMPO "moneda" DEL JSON DEBE SER ESTRICTAMENTE "{moneda_indicada}". PROHIBIDO ADIVINAR OTRA MONEDA.
+                - PROHIBIDO USAR TRAILING COMMAS: El JSON debe ser 100% válido y estricto. NO agregues una coma al final del último elemento de una lista o diccionario.
 
-        Texto del Excel:
-        {texto_crudo}
-        """
+                Texto del Excel:
+                {texto_crudo}
+                """
         respuesta = cliente.models.generate_content(
             model='gemini-2.5-flash',
             contents=prompt

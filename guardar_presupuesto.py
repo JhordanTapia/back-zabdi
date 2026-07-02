@@ -67,7 +67,8 @@ def guardar_datos_revisados_en_bd(data_ia, usuario_id, db):
             proyecto_embarcacion=data_ia.get("embarcacion", "Embarcación Desconocida"),
             fecha_emision=fecha_parseada,
             # estado="Borrador",
-            moneda=data_ia.get("moneda", "PEN"),  # <--- MAGIA: RESPETA LO QUE ELIGE EL USUARIO O LA IA
+            moneda=data_ia.get("moneda", "PEN"),
+            notas=data_ia.get("notas", None),
             creado_por=usuario_id
         )
 
@@ -77,13 +78,15 @@ def guardar_datos_revisados_en_bd(data_ia, usuario_id, db):
         print(f"   ✓ Cabecera creada con ID: {nuevo_presupuesto.id}")
 
         # 2. Creamos los Detalles (Tabla: items_presupuesto)
+        # 2. Creamos los Detalles (Tabla: items_presupuesto)
         for item in data_ia.get("items", []):
             nuevo_item = ItemPresupuesto(
                 id_presupuesto=nuevo_presupuesto.id,
                 descripcion_original=item.get("detalle_actividad"),
                 cantidad=item.get("cantidad", 1.0),
                 precio_unitario=item.get("precio_unitario", 0.0),
-                horas_hombre=0.0
+                horas_hombre=0.0,
+                notas=item.get("notas", None)  # <--- GUARDAMOS LA NOTA DEL ÍTEM
             )
             db.add(nuevo_item)
 

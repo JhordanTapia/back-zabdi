@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Date, ForeignKey, Text, DateTime, Numeric, CheckConstraint
+from sqlalchemy import Column, Integer, String, Float, Date, ForeignKey, Text, DateTime, Numeric, CheckConstraint, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -90,7 +90,8 @@ class Presupuesto(Base):
 
     moneda = Column(String(3), default='PEN')
     url_pdf_storage = Column(Text)
-    notas = Column(Text, nullable=True)  # <--- NUEVO CAMPO AÑADIDO
+    notas = Column(Text, nullable=True)
+    eliminado = Column(Boolean, default=False)  # <--- NUEVO CAMPO PARA SOFT DELETE
     creado_por = Column(UUID(as_uuid=True), ForeignKey("perfiles.id"))
     creado_en = Column(DateTime(timezone=True), server_default=func.now())
     actualizado_en = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

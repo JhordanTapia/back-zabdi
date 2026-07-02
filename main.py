@@ -298,17 +298,18 @@ def guardar_presupuesto_confirmado(
 # ==========================================================
 @app.get("/api/presupuestos/lista")
 def listar_presupuestos(
+        papelera: bool = False,
         db: Session = Depends(get_db),
         usuario_actual: Usuario = Depends(obtener_usuario_actual)
 ):
     try:
-        presupuestos = db.query(Presupuesto).order_by(Presupuesto.fecha_emision.desc()).all()
+        # Filtramos por la columna eliminado
+        presupuestos = db.query(Presupuesto).filter(Presupuesto.eliminado == papelera).order_by(
+            Presupuesto.fecha_emision.desc()).all()
 
         resultado = []
         for p in presupuestos:
             nombre_estado = p.estado_actual.nombre if p.estado_actual else "Borrador"
-
-            # MAGIA AQUÍ: Sacamos la razón social del proveedor/astillero si existe
             nombre_astillero = p.proveedor.razon_social if p.proveedor else "Particular / S.E."
 
             resultado.append({
@@ -319,7 +320,7 @@ def listar_presupuestos(
                 "fecha": p.fecha_emision.strftime("%Y-%m-%d") if p.fecha_emision else "Sin fecha",
                 "estado": nombre_estado,
                 "moneda": p.moneda if p.moneda else "PEN",
-                "notas": p.notas  # <--- ENVIAMOS LA NOTA A ANGULAR PARA EL MODAL "VER"
+                "notas": p.notas
             })
 
         return {"status": "success", "data": resultado}
@@ -328,6 +329,35 @@ def listar_presupuestos(
         raise HTTPException(status_code=500, detail=f"Error al extraer presupuestos de la BD: {str(e)}")
 
 
+# --- NUEVAS RUTAS PARA SOFT DELETE Y RESTAURAR ---
+@app.put("/api/presupuestos/{id_presupuesto}/soft-delete")
+def enviar_a_papelera(
+        id_presupuesto: int,
+        db: Session = Depends(get_db),
+        usuario_actual: Usuario = Depends(obtener_usuario_actual)
+):
+    presupuesto = db.query(Presupuesto).filter(Presupuesto.id == id_presupuesto).first()
+    if not presupuesto:
+        raise HTTPException(status_code=404, detail="No encontrado")
+
+    presupuesto.eliminado = True
+    db.commit()
+    return {"status": "success"}
+
+
+@app.put("/api/presupuestos/{id_presupuesto}/restaurar")
+def restaurar_presupuesto(
+        id_presupuesto: int,
+        db: Session = Depends(get_db),
+        usuario_actual: Usuario = Depends(obtener_usuario_actual)
+):
+    presupuesto = db.query(Presupuesto).filter(Presupuesto.id == id_presupuesto).first()
+    if not presupuesto:
+        raise HTTPException(status_code=404, detail="No encontrado")
+
+    presupuesto.eliminado = False
+    db.commit()
+    return {"status": "success"}
 @app.get("/api/presupuestos/{id_presupuesto}/detalle")
 def obtener_detalle_presupuesto(
         id_presupuesto: int,
@@ -684,6 +714,13 @@ def exportar_excel(
         # Cálculo de anchos
         max_desc_len = max([len(str(item.descripcion_original or "")) for item in items] + [45]) if items else 45
         ancho_columna_b = max(45, min(int(max_desc_len * 1.2), 120))
+
+        # ---> SOLUCIÓN: APLICAR EL ANCHO A LAS COLUMNAS <---
+        ws.column_dimensions['A'].width = 14  # Ancho para "Ítem" y "Embarcación:"
+        ws.column_dimensions['B'].width = ancho_columna_b  # Se expande según el texto/logo
+        ws.column_dimensions['C'].width = 10  # Cantidad
+        ws.column_dimensions['D'].width = 15  # P. Unitario
+        ws.column_dimensions['E'].width = 15  # Subtotal
 
         # Logo
         ruta_logo = "logo.png"
